@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "limits": {
+    "five_hour_usd": 12,
+    "weekly_usd": 30,
+    "monthly_usd": 60
+  },
+  "models": [],
+  "note": "Honor Quota creates the live model catalog on first refresh. Do not put credentials in this file."
+}
