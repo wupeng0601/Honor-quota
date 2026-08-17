@@ -51,6 +51,7 @@ namespace HonorQuotaApp
         private readonly OcgWebViewSession ocgSession;
         private readonly RelayManager relayManager;
         private Process refreshProcess;
+        private Task<IDictionary<string, object>> managedRefreshTask;
         private Task<bool> ocgRefreshTask;
         private DateTime refreshStartedAt;
         private bool busy;
@@ -211,12 +212,6 @@ namespace HonorQuotaApp
                 if (updatePopup && popup != null) popup.ShowNearCursor();
                 return;
             }
-            if (!File.Exists(cliPath))
-            {
-                if (updatePopup) ShowError("缺少刷新脚本：" + cliPath);
-                return;
-            }
-
             busy = true;
             refreshStartedAt = DateTime.Now;
             try
@@ -228,17 +223,25 @@ namespace HonorQuotaApp
                         WriteLog("Silent OCG refresh skipped: " + task.Exception.GetBaseException().Message);
                 });
                 var python = GetPythonPath();
-                refreshProcess = Process.Start(new ProcessStartInfo
+            if (python == null || !File.Exists(cliPath))
+            {
+                WriteLog(python == null ? "Python 未检测到，使用内置 C# 刷新器。" : "发布包未包含 Python CLI，使用内置 C# 刷新器。");
+                managedRefreshTask = Task.Run(delegate { return RefreshManagedProviders(); });
+                }
+                else
                 {
-                    FileName = python,
-                    Arguments = Quote(cliPath) + " --pretty --fast",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    WorkingDirectory = appDir
-                });
+                    refreshProcess = Process.Start(new ProcessStartInfo
+                    {
+                        FileName = python,
+                        Arguments = Quote(cliPath) + " --pretty --fast",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        WorkingDirectory = appDir
+                    });
+                }
                 pollTimer.Start();
             }
             catch (Exception ex)
@@ -251,14 +254,14 @@ namespace HonorQuotaApp
 
         private void PollRefresh(object sender, EventArgs e)
         {
-            if (refreshProcess == null)
+            if (refreshProcess == null && managedRefreshTask == null)
             {
                 pollTimer.Stop();
                 busy = false;
                 return;
             }
             var age = DateTime.Now - refreshStartedAt;
-            if (!refreshProcess.HasExited)
+            if (refreshProcess != null && !refreshProcess.HasExited)
             {
                 if (age.TotalSeconds > 10)
                 {
@@ -271,6 +274,11 @@ namespace HonorQuotaApp
                     return;
                 }
             }
+            if (managedRefreshTask != null && !managedRefreshTask.IsCompleted)
+            {
+                if (popup != null) popup.TickLoading();
+                return;
+            }
             if (ocgRefreshTask != null && !ocgRefreshTask.IsCompleted && age.TotalMilliseconds < 2000)
             {
                 if (popup != null) popup.TickLoading();
@@ -280,11 +288,19 @@ namespace HonorQuotaApp
             pollTimer.Stop();
             try
             {
-                var raw = refreshProcess.StandardOutput.ReadToEnd();
-                var err = refreshProcess.StandardError.ReadToEnd();
-                if (string.IsNullOrWhiteSpace(raw) && !string.IsNullOrWhiteSpace(err)) throw new Exception(err.Trim());
-                if (string.IsNullOrWhiteSpace(raw)) throw new Exception("刷新进程没有写出结果。");
-                var parsed = serializer.DeserializeObject(raw) as IDictionary<string, object>;
+                IDictionary<string, object> parsed;
+                if (managedRefreshTask != null)
+                {
+                    parsed = managedRefreshTask.GetAwaiter().GetResult();
+                }
+                else
+                {
+                    var raw = refreshProcess.StandardOutput.ReadToEnd();
+                    var err = refreshProcess.StandardError.ReadToEnd();
+                    if (string.IsNullOrWhiteSpace(raw) && !string.IsNullOrWhiteSpace(err)) throw new Exception(err.Trim());
+                    if (string.IsNullOrWhiteSpace(raw)) throw new Exception("刷新进程没有写出结果。");
+                    parsed = serializer.DeserializeObject(raw) as IDictionary<string, object>;
+                }
                 if (parsed == null) throw new Exception("刷新结果格式不正确。");
                 if (parsed.ContainsKey("error")) throw new Exception(Convert.ToString(parsed["error"]));
                 if (ocgRefreshTask != null && ocgRefreshTask.IsCompleted) ObserveOcgRefreshTask();
@@ -313,9 +329,205 @@ namespace HonorQuotaApp
             {
                 try { if (refreshProcess != null) refreshProcess.Dispose(); } catch { }
                 refreshProcess = null;
+                managedRefreshTask = null;
                 ocgRefreshTask = null;
                 busy = false;
             }
+        }
+
+        private IDictionary<string, object> RefreshManagedProviders()
+        {
+            var started = DateTime.UtcNow;
+            var providers = new List<object>();
+            providers.Add(CaptureManaged("codex", FetchCodexManaged));
+            providers.Add(LoadCachedOpenCodeManaged());
+            providers.Add(CaptureManaged("deepseek", FetchDeepSeekManaged));
+            var result = new Dictionary<string, object>();
+            result["generated_at"] = started.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            result["elapsed_ms"] = (int)(DateTime.UtcNow - started).TotalMilliseconds;
+            result["providers"] = providers;
+            return result;
+        }
+
+        private IDictionary<string, object> CaptureManaged(string provider, Func<IDictionary<string, object>> fetch)
+        {
+            try { return fetch(); }
+            catch (Exception ex)
+            {
+                return new Dictionary<string, object>
+                {
+                    { "provider", provider },
+                    { "ok", false },
+                    { "error", ex.Message }
+                };
+            }
+        }
+
+        private IDictionary<string, object> LoadCachedOpenCodeManaged()
+        {
+            var path = Path.Combine(appDir, "opencode_go_cache.json");
+            try
+            {
+                if (File.Exists(path))
+                {
+                    var cached = serializer.DeserializeObject(File.ReadAllText(path, Encoding.UTF8)) as IDictionary<string, object>;
+                    if (cached != null && Convert.ToString(Json.Value(cached, "provider")) == "opencode_go") return cached;
+                }
+            }
+            catch (Exception ex)
+            {
+                return new Dictionary<string, object> { { "provider", "opencode_go" }, { "ok", false }, { "error", ex.Message } };
+            }
+            return new Dictionary<string, object>
+            {
+                { "provider", "opencode_go" },
+                { "ok", false },
+                { "error", "未找到 OpenCode Go 本地用量缓存；请从托盘菜单登录/检查。" },
+                { "usage", "用量需要 opencode.ai 登录会话或本地缓存。" }
+            };
+        }
+
+        private IDictionary<string, object> FetchCodexManaged()
+        {
+            var home = UserEnv("CODEX_HOME");
+            if (string.IsNullOrWhiteSpace(home)) home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
+            var authPath = Path.Combine(home, "auth.json");
+            if (!File.Exists(authPath)) throw new Exception("Codex auth not found: " + authPath);
+            var auth = serializer.DeserializeObject(File.ReadAllText(authPath, Encoding.UTF8)) as IDictionary<string, object>;
+            if (auth == null) throw new Exception("Codex auth.json 格式不正确。");
+            var token = Convert.ToString(Json.Value(auth, "OPENAI_API_KEY"));
+            var tokens = Json.Value(auth, "tokens") as IDictionary<string, object>;
+            if (string.IsNullOrWhiteSpace(token)) token = Convert.ToString(Json.Value(tokens, "access_token"));
+            if (string.IsNullOrWhiteSpace(token)) throw new Exception("Codex auth.json 中没有 access_token。");
+            var accountId = Convert.ToString(Json.Value(tokens, "account_id"));
+            var baseUrl = "https://chatgpt.com/backend-api";
+            var configPath = Path.Combine(home, "config.toml");
+            if (File.Exists(configPath))
+            {
+                var config = File.ReadAllText(configPath, Encoding.UTF8);
+                var match = Regex.Match(config, "(?m)^\\s*chatgpt_base_url\\s*=\\s*['\"]([^'\"]+)['\"]");
+                if (match.Success && (match.Groups[1].Value.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || match.Groups[1].Value.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase))) baseUrl = match.Groups[1].Value.TrimEnd('/');
+            }
+            var headers = new Dictionary<string, string> { { "Authorization", "Bearer " + token }, { "Accept", "application/json" }, { "User-Agent", "HonorQuota" } };
+            if (!string.IsNullOrWhiteSpace(accountId)) headers["ChatGPT-Account-Id"] = accountId;
+            var usage = HttpJsonObject(baseUrl + "/wham/usage", headers, 15000);
+            var rate = Json.Value(usage, "rate_limit") as IDictionary<string, object>;
+            var primary = FirstManagedWindow(Json.Value(rate, "primary_window"), Json.Value(usage, "primary"), Json.Value(usage, "primary_window"), usage);
+            var secondary = FirstManagedWindow(Json.Value(rate, "secondary_window"), Json.Value(usage, "secondary"), Json.Value(usage, "secondary_window"));
+            if (primary == null && secondary == null) throw new Exception("Codex usage windows not found in response。");
+            var result = new Dictionary<string, object>
+            {
+                { "provider", "codex" }, { "ok", true }, { "source", "codex_chatgpt_auth" },
+                { "plan", Json.Value(usage, "plan_type") }, { "primary", primary }, { "secondary", secondary }
+            };
+            try
+            {
+                var credits = HttpJsonObject(baseUrl + "/wham/rate-limit-reset-credits", headers, 6000);
+                result["reset_credits"] = new Dictionary<string, object> { { "available_count", Json.Value(credits, "available_count") ?? Json.Value(credits, "availableCount") } };
+            }
+            catch (Exception ex)
+            {
+                result["reset_credits"] = new Dictionary<string, object> { { "error", ex.Message } };
+            }
+            return result;
+        }
+
+        private IDictionary<string, object> FetchDeepSeekManaged()
+        {
+            var key = UserEnv("DEEPSEEK_API_KEY");
+            if (string.IsNullOrWhiteSpace(key)) key = UserEnv("DEEPSEEK_KEY");
+            if (string.IsNullOrWhiteSpace(key)) throw new Exception("缺少 DEEPSEEK_API_KEY 或 DEEPSEEK_KEY。");
+            var headers = new Dictionary<string, string> { { "Authorization", "Bearer " + key }, { "Accept", "application/json" }, { "User-Agent", "HonorQuota" } };
+            var data = HttpJsonObject("https://api.deepseek.com/user/balance", headers, 15000);
+            return new Dictionary<string, object>
+            {
+                { "provider", "deepseek" }, { "ok", true }, { "source", "official_balance_api" },
+                { "is_available", Json.Value(data, "is_available") }, { "balance_infos", Json.Value(data, "balance_infos") ?? new List<object>() }
+            };
+        }
+
+        private IDictionary<string, object> HttpJsonObject(string url, IDictionary<string, string> headers, int timeout)
+        {
+            ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072;
+            var request = WebRequest.CreateHttp(url);
+            request.Method = "GET";
+            request.Timeout = timeout;
+            request.UserAgent = "HonorQuota";
+            foreach (var header in headers)
+            {
+                if (string.Equals(header.Key, "User-Agent", StringComparison.OrdinalIgnoreCase)) continue;
+                request.Headers[header.Key] = header.Value;
+            }
+            using (var response = request.GetResponse())
+            using (var stream = response.GetResponseStream())
+            using (var reader = new StreamReader(stream, Encoding.UTF8))
+            {
+                var parsed = serializer.DeserializeObject(reader.ReadToEnd()) as IDictionary<string, object>;
+                if (parsed == null) throw new Exception("接口返回不是 JSON 对象：" + url);
+                return parsed;
+            }
+        }
+
+        private IDictionary<string, object> FirstManagedWindow(params object[] values)
+        {
+            foreach (var value in values)
+            {
+                var window = ManagedCodexWindow(value);
+                if (window != null) return window;
+            }
+            return null;
+        }
+
+        private IDictionary<string, object> ManagedCodexWindow(object value)
+        {
+            var obj = value as IDictionary<string, object>;
+            if (obj == null) return null;
+            var used = ManagedNumber(obj, "used_percent", "usage_percent", "percent_used", "percent");
+            if (!used.HasValue)
+            {
+                var current = ManagedNumber(obj, "used", "current", "count");
+                var limit = ManagedNumber(obj, "limit", "max", "total");
+                if (current.HasValue && limit.HasValue && limit.Value > 0) used = current.Value / limit.Value * 100.0;
+            }
+            if (!used.HasValue) return null;
+            var result = new Dictionary<string, object> { { "used_percent", Math.Round(Math.Max(0, Math.Min(100, used.Value)), 2) } };
+            CopyManagedText(obj, result, "resets_at", "resets_at", "reset_at", "resetAt");
+            CopyManagedText(obj, result, "reset_description", "reset_description", "resetDescription", "description");
+            var minutes = ManagedNumber(obj, "window_minutes", "windowMinutes");
+            if (minutes.HasValue) result["window_minutes"] = minutes.Value;
+            return result;
+        }
+
+        private double? ManagedNumber(IDictionary<string, object> obj, params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                var raw = Json.Value(obj, key);
+                try { if (raw != null) return Convert.ToDouble(raw, CultureInfo.InvariantCulture); } catch { }
+            }
+            return null;
+        }
+
+        private void CopyManagedText(IDictionary<string, object> source, IDictionary<string, object> target, string targetKey, params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                var raw = Convert.ToString(Json.Value(source, key));
+                if (!string.IsNullOrWhiteSpace(raw)) { target[targetKey] = raw; return; }
+            }
+        }
+
+        private static string UserEnv(string name)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+            try
+            {
+                value = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.User);
+                if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+            }
+            catch { }
+            return null;
         }
 
         private void ObserveOcgRefreshTask()
@@ -409,7 +621,7 @@ namespace HonorQuotaApp
                     if (resolved != null) return resolved;
                 }
             }
-            return "python.exe";
+            return null;
         }
 
         private static string FindOnPath(string exeName)

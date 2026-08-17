@@ -16,10 +16,10 @@ Honor Quota 是一个轻量级 Windows 托盘面板，把 Codex、OpenCode Go �
 
 ## 工作方式
 
-桌面程序完全在本机运行，刷新流程如下：
+桌面程序完全在本机运行，正常刷新流程如下：
 
-1. `honor_quota_cli.py` 读取本机 Codex 凭据和已配置的环境变量。
-2. CLI 从相应官方接口请求各服务的状态。
+1. 内置 C# 刷新器读取本机 Codex 凭据和已配置的环境变量。
+2. 程序从相应官方接口请求各服务状态；OpenCode Go 则按支持方式使用本机登录会话或缓存。
 3. 托盘程序在本机渲染结果，并把缓存/历史写在程序目录中。
 4. OpenCode Go 的模型规则单独从官方文档和实时模型目录同步。
 
@@ -33,15 +33,15 @@ OpenCode Go 数据来源：
 ## 运行要求
 
 - Windows 10 或 Windows 11，x64。
-- Microsoft Edge WebView2 Runtime（Evergreen）。Windows 11 通常已自带；Windows 10 可从 [Microsoft WebView2 页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装。
-- Python 3.10 或更高版本，并且在 `PATH` 中；也可以用 `PYTHON` 环境变量指定 Python 路径。面板使用内置的 `honor_quota_cli.py` 刷新服务状态。
+- Microsoft Edge WebView2 Runtime（Evergreen）。安装器会先检查，缺少时尝试自动安装官方 Evergreen Runtime。Windows 11 通常已自带；离线电脑可能需要从 [Microsoft WebView2 页面](https://developer.microsoft.com/microsoft-edge/webview2/) 手动安装一次。
+- **不需要 Python**。发布包使用内置 C# 刷新器；`src/honor_quota_cli.py` 仅作为开发者可选的诊断/兼容工具保留。
 - 已登录的本机 Codex 环境。
 - OpenCode Go 和 DeepSeek 需要按下面的本地登录/缓存或环境变量方式配置。
 
 ## 安装发布包
 
 1. 从 [Releases](https://github.com/wupeng0601/Honor-quota/releases) 下载最新的 `HonorQuota-*-win-x64.zip`。
-2. 解压到普通可写目录；也可以直接在解压目录运行 `install-honor-quota.ps1`。
+2. 解压到普通可写目录，然后运行 `install-honor-quota.ps1`。安装器会检查 WebView2，缺少时尝试自动安装官方 Evergreen Runtime。
 3. 如果 PowerShell 阻止本地脚本，运行：
 
    ```powershell
@@ -51,7 +51,7 @@ OpenCode Go 数据来源：
 4. 从开始菜单快捷方式启动 `HonorQuota.exe`，或运行 `start-honor-quota.ps1`。
 5. 左键点击托盘图标刷新并打开面板；右键可以进入设置、登录、开机启动和模型管理。
 
-安装方式是按用户安装的便携式安装，不需要管理员权限，默认安装到 `%LOCALAPPDATA%\HonorQuota`。升级时会保留本地模型选择、拖拽顺序和缓存。
+程序本身按用户安装，默认安装到 `%LOCALAPPDATA%\HonorQuota`。WebView2 安装器可能需要联网和 Windows 权限提升；离线电脑请先单独安装 WebView2。升级时会保留本地模型选择、拖拽顺序和缓存。
 
 ## 第一次配置
 
@@ -107,7 +107,7 @@ OPENCODE_API_KEY
 
 ## 从源码构建
 
-源码是一个便于维护的 .NET Framework WinForms/WebView2 单文件应用。PowerShell 构建脚本会下载固定版本的 Microsoft WebView2 NuGet 包，并调用系统 C# 编译器：
+源码是一个便于维护的 .NET Framework WinForms/WebView2 单文件应用。PowerShell 构建脚本会下载固定版本的 Microsoft WebView2 NuGet 包，并调用系统 C# 编译器；构建和运行发布包都不需要 Python：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
@@ -121,10 +121,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
 ### 托盘图标没有用量
 
-先看 `honor-quota-app.log`，再直接运行 CLI：
+先看 `honor-quota-app.log`。开发者也可以手动运行可选诊断 CLI：
 
 ```powershell
-python .\honor_quota_cli.py --pretty --fast
+python .\src\honor_quota_cli.py --pretty --fast
 ```
 
 程序会分别报告各个 provider 的失败；某一个服务失败不代表全部服务都不可用。

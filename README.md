@@ -16,10 +16,10 @@ Honor Quota is a lightweight Windows tray dashboard for checking Codex, OpenCode
 
 ## Screens and data flow
 
-The desktop application runs locally. The refresh path is:
+The desktop application runs locally. The normal refresh path is:
 
-1. `honor_quota_cli.py` reads local Codex credentials and configured environment variables.
-2. The script requests provider status data from the relevant official endpoints.
+1. The built-in C# refresher reads local Codex credentials and configured environment variables.
+2. The application requests provider status data from the relevant official endpoints, or uses the local OpenCode Go session/cache where that is the supported path.
 3. The tray application renders the result locally and stores only local cache/history files beside the executable.
 4. OpenCode Go model rules are refreshed separately from the official Go documentation and the live model directory.
 
@@ -33,15 +33,15 @@ Models that appear in the live directory before an official usage estimate is pu
 ## Requirements
 
 - Windows 10 or Windows 11, x64.
-- Microsoft Edge WebView2 Runtime (Evergreen). Windows 11 normally includes it; Windows 10 users can install it from [Microsoft's WebView2 page](https://developer.microsoft.com/microsoft-edge/webview2/).
-- Python 3.10 or newer on `PATH`, or a `PYTHON` environment variable pointing to Python. The dashboard uses the bundled `honor_quota_cli.py` for provider refreshes.
+- Microsoft Edge WebView2 Runtime (Evergreen). The installer checks for it and attempts to install the official Evergreen Runtime automatically. Windows 11 normally includes it; offline users may need to install the [WebView2 Standalone Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) once.
+- Python is **not required** for the packaged application. `src/honor_quota_cli.py` is retained only as an optional diagnostic/backward-compatibility tool for developers.
 - An authenticated Codex installation for Codex status.
 - For OpenCode Go and DeepSeek status, use the supported local login/cache flow or the environment variables described below.
 
 ## Install the release package
 
 1. Download the latest `HonorQuota-*-win-x64.zip` from [Releases](https://github.com/wupeng0601/Honor-quota/releases).
-2. Extract it to a normal writable folder, or run `install-honor-quota.ps1` from the extracted folder.
+2. Extract it to a normal writable folder, then run `install-honor-quota.ps1` from the extracted folder. The installer checks WebView2 and tries to install the official Evergreen Runtime if it is missing.
 3. If PowerShell blocks local scripts, run:
 
    ```powershell
@@ -51,7 +51,7 @@ Models that appear in the live directory before an official usage estimate is pu
 4. Launch `HonorQuota.exe` from the Start Menu shortcut or run `start-honor-quota.ps1`.
 5. Left-click the tray icon to refresh and open the dashboard. Right-click it for settings, login, startup, and model controls.
 
-The installer is intentionally a per-user portable install. It does not require administrator rights and installs to `%LOCALAPPDATA%\HonorQuota` by default. Existing local model selections and caches are preserved during an upgrade.
+The application itself is a per-user install and uses `%LOCALAPPDATA%\HonorQuota` by default. The WebView2 bootstrapper may require network access and Windows permission elevation; on an offline machine, install WebView2 separately first. Existing local model selections and caches are preserved during an upgrade.
 
 ## First-time configuration
 
@@ -107,7 +107,7 @@ Do not upload these files to an issue or attach them to a public bug report with
 
 ## Build from source
 
-The source is a single .NET Framework WinForms/WebView2 application for easy local maintenance. A PowerShell build script downloads the pinned Microsoft WebView2 NuGet package and invokes the system C# compiler:
+The source is a single .NET Framework WinForms/WebView2 application for easy local maintenance. A PowerShell build script downloads the pinned Microsoft WebView2 NuGet package and invokes the system C# compiler; Python is not needed to build or run the packaged app:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
@@ -121,10 +121,10 @@ The public source is in [`src/HonorQuotaApp.cs`](src/HonorQuotaApp.cs). The buil
 
 ### The tray icon does not show usage
 
-Check `honor-quota-app.log`, then run the CLI directly:
+Check `honor-quota-app.log`. Developers may also run the optional diagnostic CLI directly:
 
 ```powershell
-python .\honor_quota_cli.py --pretty --fast
+python .\src\honor_quota_cli.py --pretty --fast
 ```
 
 An unavailable provider is reported separately; a failed provider request does not mean that all providers are broken.
