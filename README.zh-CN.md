@@ -13,6 +13,40 @@ Honor Quota 是一个 Windows 托盘额度面板，用来集中查看 Codex、Op
 - 选择模型、修改估算规则、拖动模型卡片排序。
 - 按当前 Windows 用户安装，托盘菜单直接操作。
 
+## 当前 OpenCode Go 官方规则
+
+内置默认值和程序内的目录同步以 [OpenCode Go 最新官方页面](https://opencode.ai/docs/zh-cn/go) 为准（该页标注的最近更新时间为 2026-08-16）。Go 的额度窗口为：**5 小时 12 美元**、**每周 30 美元**、**每月 60 美元**。这三档美元额度由模型共享，因此实际能发送多少次请求会随模型和请求模式变化。
+
+当前官方文档列出的模型为：Grok 4.5；GLM-5.3、GLM-5.2、GLM-5.1；GPT 5.6 Luna；Kimi K3、Kimi K2.7 Code、Kimi K2.6；MiMo-V2.5、MiMo-V2.5-Pro；MiniMax M3、MiniMax M2.7；Qwen3.8 Max、Qwen3.7 Max、Qwen3.7 Plus、Qwen3.6 Plus；DeepSeek V4 Pro、DeepSeek V4 Flash；Hy3。
+
+程序启动时以及点击 **刷新官方模型目录** 时，Honor Quota 会读取官方文档中的额度和典型请求估算，同时检查实时 [`/models`](https://opencode.ai/zen/go/v1/models) 目录。即使官方文档还没有给出估算，新出现的实时模型也会保留在编辑器里供你查看。
+
+### 内置典型请求估算
+
+| 模型 | 5 小时 | 每周 | 每月 |
+| --- | ---: | ---: | ---: |
+| Grok 4.5 | 120 | 300 | 600 |
+| GLM-5.3 | 220 | 540 | 1,080 |
+| GLM-5.2 | 880 | 2,150 | 4,300 |
+| GLM-5.1 | 880 | 2,150 | 4,300 |
+| GPT 5.6 Luna | 2,050 | 5,100 | 10,250 |
+| Kimi K3 | 110 | 250 | 490 |
+| Kimi K2.7 Code | 1,350 | 3,380 | 6,750 |
+| Kimi K2.6 | 1,150 | 2,880 | 5,750 |
+| MiMo-V2.5 | 30,100 | 75,200 | 150,400 |
+| MiMo-V2.5-Pro | 3,250 | 8,150 | 16,300 |
+| MiniMax M3 | 3,200 | 8,000 | 16,000 |
+| MiniMax M2.7 | 3,400 | 8,500 | 17,000 |
+| Qwen3.8 Max | 160 | 400 | 810 |
+| Qwen3.7 Max | 340 | 840 | 1,690 |
+| Qwen3.7 Plus | 4,300 | 10,800 | 21,600 |
+| Qwen3.6 Plus | 3,300 | 8,200 | 16,300 |
+| DeepSeek V4 Pro | 1,050 | 2,600 | 5,200 |
+| DeepSeek V4 Flash | 3,800 | 9,450 | 18,900 |
+| Hy3 | 4,300 | 10,750 | 21,500 |
+
+这些是官方给出的典型请求估算，并不保证你的实际提示词一定能达到相同次数。
+
 ## 1. 下载和安装
 
 1. 打开 [Releases](https://github.com/wupeng0601/Honor-quota/releases)，下载 `HonorQuota-0.0.1-win-x64.zip`。
@@ -43,7 +77,7 @@ Honor Quota 会读取当前 Codex 安装使用的本地账号。
 3. 在 OpenCode Go 页面完成登录。
 4. 关闭登录窗口，再点击 `显示并刷新`。
 
-OpenCode Go 用量来自这套独立的 WebView2 登录会话。会话保存在 `%LOCALAPPDATA%\HonorQuota\WebView2`，最新页面数据会缓存到 `opencode_go_cache.json`。
+OpenCode Go 用量来自这套独立的 WebView2 登录会话，不是由 Honor Quota 保存 Go API Key 后读取。会话保存在 `%LOCALAPPDATA%\HonorQuota\WebView2`，最新页面数据会缓存到 `opencode_go_cache.json`。
 
 ### DeepSeek
 
@@ -98,7 +132,7 @@ Key 会保存到当前 Windows 用户的 `DEEPSEEK_API_KEY` 环境变量。
 
 ### 刷新模型目录
 
-点击 `刷新官方模型目录`，同步最新的 OpenCode Go 官方规则和实时模型目录。同步完成后，新模型会出现在编辑器中。
+点击 `刷新官方模型目录`，同步当前的 12 / 30 / 60 美元额度、官方典型请求估算和实时模型目录。即使新模型暂未公布官方估算，也会出现在编辑器中。
 
 ### 修改估算规则
 

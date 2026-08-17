@@ -13,6 +13,40 @@ Honor Quota is a Windows tray dashboard for Codex, OpenCode Go, and DeepSeek. It
 - Model selection, estimate editing, and drag-and-drop ordering.
 - Per-user Windows installation with a tray-first workflow.
 
+## Current OpenCode Go reference
+
+The bundled defaults and the in-app catalog sync follow the [current OpenCode Go page](https://opencode.ai/docs/zh-cn/go) (page update: 2026-08-16). Go has a **$12 / 5-hour**, **$30 / week**, and **$60 / month** usage window. The dollar windows are shared across models, so the practical request count changes with the selected model and its request pattern.
+
+The currently documented catalog is: Grok 4.5; GLM-5.3, GLM-5.2, GLM-5.1; GPT 5.6 Luna; Kimi K3, Kimi K2.7 Code, Kimi K2.6; MiMo-V2.5, MiMo-V2.5-Pro; MiniMax M3, MiniMax M2.7; Qwen3.8 Max, Qwen3.7 Max, Qwen3.7 Plus, Qwen3.6 Plus; DeepSeek V4 Pro, DeepSeek V4 Flash; and Hy3.
+
+On startup and when you click **刷新官方模型目录**, Honor Quota reads the official Go documentation for quota rules and also checks the live [`/models`](https://opencode.ai/zen/go/v1/models) directory. New live models are kept in the editor even if the documentation has not published a request estimate yet.
+
+### Bundled typical-request estimates
+
+| Model | 5 hours | Week | Month |
+| --- | ---: | ---: | ---: |
+| Grok 4.5 | 120 | 300 | 600 |
+| GLM-5.3 | 220 | 540 | 1,080 |
+| GLM-5.2 | 880 | 2,150 | 4,300 |
+| GLM-5.1 | 880 | 2,150 | 4,300 |
+| GPT 5.6 Luna | 2,050 | 5,100 | 10,250 |
+| Kimi K3 | 110 | 250 | 490 |
+| Kimi K2.7 Code | 1,350 | 3,380 | 6,750 |
+| Kimi K2.6 | 1,150 | 2,880 | 5,750 |
+| MiMo-V2.5 | 30,100 | 75,200 | 150,400 |
+| MiMo-V2.5-Pro | 3,250 | 8,150 | 16,300 |
+| MiniMax M3 | 3,200 | 8,000 | 16,000 |
+| MiniMax M2.7 | 3,400 | 8,500 | 17,000 |
+| Qwen3.8 Max | 160 | 400 | 810 |
+| Qwen3.7 Max | 340 | 840 | 1,690 |
+| Qwen3.7 Plus | 4,300 | 10,800 | 21,600 |
+| Qwen3.6 Plus | 3,300 | 8,200 | 16,300 |
+| DeepSeek V4 Pro | 1,050 | 2,600 | 5,200 |
+| DeepSeek V4 Flash | 3,800 | 9,450 | 18,900 |
+| Hy3 | 4,300 | 10,750 | 21,500 |
+
+These are the official typical-request estimates, not a guarantee of how many requests your own prompts will use.
+
 ## 1. Download and install
 
 1. Open the [Releases](https://github.com/wupeng0601/Honor-quota/releases) page and download `HonorQuota-0.0.1-win-x64.zip`.
@@ -43,7 +77,7 @@ Honor Quota reads the local Codex account used by the normal Codex installation.
 3. Sign in on the OpenCode Go page.
 4. Close the login window and click `显示并刷新`.
 
-OpenCode Go usage is read from this dedicated WebView2 session. The session is stored in `%LOCALAPPDATA%\HonorQuota\WebView2`; the latest dashboard values are cached in `opencode_go_cache.json`.
+OpenCode Go usage is read from this dedicated WebView2 login session, not from a Go API key stored by Honor Quota. The session is stored in `%LOCALAPPDATA%\HonorQuota\WebView2`; the latest dashboard values are cached in `opencode_go_cache.json`.
 
 ### DeepSeek
 
@@ -98,7 +132,7 @@ Open `OpenCode Go 模型与用量规则...` from the tray menu.
 
 ### Refresh the catalog
 
-Click `刷新官方模型目录` to load the latest OpenCode Go documentation rules and live model directory. New models appear in the editor after synchronization.
+Click `刷新官方模型目录` to update the current $12 / $30 / $60 windows, documented request estimates, and the live model directory. New live models appear in the editor even before an official estimate is available.
 
 ### Edit estimates
 
