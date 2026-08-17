@@ -497,8 +497,25 @@ namespace HonorQuotaApp
             request.UserAgent = "HonorQuota";
             foreach (var header in headers)
             {
-                if (string.Equals(header.Key, "User-Agent", StringComparison.OrdinalIgnoreCase)) continue;
-                request.Headers[header.Key] = header.Value;
+                // HttpWebRequest protects a few well-known headers.  They must be
+                // assigned through their dedicated properties rather than through
+                // the generic Headers collection.
+                if (string.Equals(header.Key, "User-Agent", StringComparison.OrdinalIgnoreCase))
+                {
+                    request.UserAgent = header.Value;
+                }
+                else if (string.Equals(header.Key, "Accept", StringComparison.OrdinalIgnoreCase))
+                {
+                    request.Accept = header.Value;
+                }
+                else if (string.Equals(header.Key, "Authorization", StringComparison.OrdinalIgnoreCase))
+                {
+                    request.Headers[HttpRequestHeader.Authorization] = header.Value;
+                }
+                else
+                {
+                    request.Headers[header.Key] = header.Value;
+                }
             }
             using (var response = request.GetResponse())
             using (var stream = response.GetResponseStream())
