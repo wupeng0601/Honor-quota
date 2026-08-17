@@ -161,7 +161,7 @@ namespace HonorQuotaApp
 
         private void OpenDeepSeekSettings()
         {
-            using (var settings = new DeepSeekSettingsForm(ConfigureDeepSeekApiKeyAsync, ClearDeepSeekApiKey, HasDeepSeekApiKey()))
+            using (var settings = new DeepSeekSettingsFormV3(ConfigureDeepSeekApiKeyAsync, ClearDeepSeekApiKey, HasDeepSeekApiKey()))
             {
                 if (settings.ShowDialog() == DialogResult.OK) StartRefresh(false);
             }
@@ -1564,6 +1564,169 @@ linear-gradient(180deg,#fbfdff 0%,#f6f8fb 64%,#eef2f7 100%)} main{padding:14px}
         public static readonly Color Bad = Color.FromArgb(190, 58, 52);
     }
 
+    internal sealed class HonorCardPanel : Panel
+    {
+        private const int Radius = 16;
+
+        public HonorCardPanel()
+        {
+            BackColor = Color.White;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            Resize += delegate { UpdateRegion(); Invalidate(); };
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var brush = new SolidBrush(BackColor))
+                e.Graphics.FillPath(brush, RoundedPath(new Rectangle(0, 0, Width - 1, Height - 1)));
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var pen = new Pen(Color.FromArgb(226, 232, 240)))
+                e.Graphics.DrawPath(pen, RoundedPath(new Rectangle(0, 0, Width - 1, Height - 1)));
+        }
+
+        private void UpdateRegion()
+        {
+            if (Width < 2 || Height < 2) return;
+            using (var path = RoundedPath(new Rectangle(0, 0, Width, Height)))
+                Region = new Region(path);
+        }
+
+        private static GraphicsPath RoundedPath(Rectangle bounds)
+        {
+            int d = Radius * 2;
+            var path = new GraphicsPath();
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
+    internal sealed class HonorButton : Button
+    {
+        private readonly Color normalColor;
+        private readonly Color hoverColor;
+        private const int Radius = 12;
+
+        public HonorButton(string text, Color normalColor, Color hoverColor, Color foreColor, int width)
+        {
+            Text = text;
+            Width = width;
+            Height = 42;
+            this.normalColor = normalColor;
+            this.hoverColor = hoverColor;
+            BackColor = normalColor;
+            ForeColor = foreColor;
+            FlatStyle = FlatStyle.Flat;
+            UseVisualStyleBackColor = false;
+            FlatAppearance.BorderSize = 0;
+            FlatAppearance.BorderColor = normalColor;
+            FlatAppearance.MouseOverBackColor = hoverColor;
+            FlatAppearance.MouseDownBackColor = hoverColor;
+            Font = new Font("Segoe UI Semibold", 9.5F, FontStyle.Bold);
+            Cursor = Cursors.Hand;
+            TabStop = false;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+            MouseEnter += delegate { BackColor = hoverColor; Invalidate(); };
+            MouseLeave += delegate { BackColor = normalColor; Invalidate(); };
+            Region = null;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var brush = new SolidBrush(BackColor))
+                e.Graphics.FillPath(brush, RoundedPath(new Rectangle(0, 0, Width - 1, Height - 1)));
+            TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, ForeColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            var parentColor = Parent == null || Parent.BackColor == Color.Transparent ? Color.White : Parent.BackColor;
+            e.Graphics.Clear(parentColor);
+        }
+
+        private void UpdateRegion()
+        {
+            if (Width < 2 || Height < 2) return;
+            using (var path = RoundedPath(new Rectangle(0, 0, Width, Height)))
+                Region = new Region(path);
+        }
+
+        private static GraphicsPath RoundedPath(Rectangle bounds)
+        {
+            int d = Radius * 2;
+            var path = new GraphicsPath();
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
+    internal sealed class HonorActionPanel : Panel
+    {
+        private readonly Color normalColor;
+        private readonly Color hoverColor;
+        private readonly Color foreColor;
+        private bool hovered;
+        private const int Radius = 12;
+
+        public HonorActionPanel(string text, Color normalColor, Color hoverColor, Color foreColor, int width)
+        {
+            Text = text;
+            Width = width;
+            Height = 42;
+            this.normalColor = normalColor;
+            this.hoverColor = hoverColor;
+            this.foreColor = foreColor;
+            BackColor = normalColor;
+            Cursor = Cursors.Hand;
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+            MouseEnter += delegate { hovered = true; Invalidate(); };
+            MouseLeave += delegate { hovered = false; Invalidate(); };
+            EnabledChanged += delegate { Invalidate(); };
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            var parentColor = Parent == null || Parent.BackColor == Color.Transparent ? Color.White : Parent.BackColor;
+            e.Graphics.Clear(parentColor);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var color = !Enabled ? Color.FromArgb(203, 213, 225) : (hovered ? hoverColor : normalColor);
+            using (var brush = new SolidBrush(color))
+                e.Graphics.FillPath(brush, RoundedPath(new Rectangle(0, 0, Width - 1, Height - 1)));
+            var textColor = !Enabled ? Color.White : foreColor;
+            TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, textColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+
+        private static GraphicsPath RoundedPath(Rectangle bounds)
+        {
+            int d = Radius * 2;
+            var path = new GraphicsPath();
+            path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
+            path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
+            path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
+            path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+    }
+
     internal static class Json
     {
         public static IDictionary<string, object> Provider(IDictionary<string, object> root, string id)
@@ -2122,6 +2285,400 @@ linear-gradient(180deg,#fbfdff 0%,#f6f8fb 64%,#eef2f7 100%)} main{padding:14px}
         public static DeepSeekKeyResult Fail(string message)
         {
             return new DeepSeekKeyResult { Ok = false, Message = message, Key = "" };
+        }
+    }
+
+    internal sealed class DeepSeekSettingsFormV3 : Form
+    {
+        private readonly Func<string, Task<DeepSeekKeyResult>> configure;
+        private readonly Action clear;
+        private readonly bool wasConfigured;
+        private readonly TextBox keyBox = new TextBox();
+        private readonly CheckBox reveal = new CheckBox();
+        private readonly Label status = new Label();
+        private HonorActionPanel testSave;
+
+        public DeepSeekSettingsFormV3(Func<string, Task<DeepSeekKeyResult>> configure, Action clear, bool wasConfigured)
+        {
+            this.configure = configure;
+            this.clear = clear;
+            this.wasConfigured = wasConfigured;
+            Text = "Honor Quota  ·  DeepSeek API 配置";
+            StartPosition = FormStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            Size = new Size(760, 560);
+            MinimumSize = new Size(760, 560);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            BackColor = Color.FromArgb(248, 250, 252);
+            Font = new Font("Segoe UI", 9.5F);
+            BuildUi();
+            Shown += delegate { keyBox.Focus(); };
+        }
+
+        private void BuildUi()
+        {
+            var header = new Panel { Dock = DockStyle.Top, Height = 112, BackColor = Color.White };
+            var mark = new Label
+            {
+                Text = "DS",
+                Location = new Point(28, 22),
+                Size = new Size(48, 48),
+                BackColor = Color.FromArgb(235, 243, 255),
+                ForeColor = Color.FromArgb(37, 99, 235),
+                Font = new Font("Segoe UI Semibold", 12F, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            header.Controls.Add(mark);
+            header.Controls.Add(new Label
+            {
+                Text = "DeepSeek API 配置",
+                Location = new Point(92, 21),
+                Size = new Size(420, 32),
+                Font = new Font("Segoe UI Semibold", 18F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(15, 23, 42)
+            });
+            header.Controls.Add(new Label
+            {
+                Text = "输入、验证并保存你的 DeepSeek API Key",
+                Location = new Point(94, 58),
+                Size = new Size(470, 24),
+                ForeColor = Color.FromArgb(100, 116, 139)
+            });
+            header.Controls.Add(new Label
+            {
+                Text = "OFFICIAL API",
+                Location = new Point(610, 35),
+                Size = new Size(118, 24),
+                BackColor = Color.FromArgb(239, 246, 255),
+                ForeColor = Color.FromArgb(37, 99, 235),
+                Font = new Font("Segoe UI Semibold", 8F, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleCenter
+            });
+            header.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 3, BackColor = Color.FromArgb(37, 99, 235) });
+
+            var body = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(248, 250, 252) };
+            var keyCard = new HonorCardPanel { Location = new Point(24, 24), Size = new Size(684, 144), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+            keyCard.Controls.Add(new Label
+            {
+                Text = "DeepSeek API Key",
+                Location = new Point(20, 16),
+                Size = new Size(260, 24),
+                Font = new Font("Segoe UI Semibold", 11F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(30, 41, 59)
+            });
+            keyCard.Controls.Add(new Label
+            {
+                Text = "粘贴以 sk- 开头的 Key，验证成功后读取账户余额",
+                Location = new Point(20, 39),
+                Size = new Size(600, 20),
+                ForeColor = Color.FromArgb(100, 116, 139)
+            });
+            var inputShell = new HonorCardPanel { Location = new Point(20, 64), Size = new Size(642, 42), BackColor = Color.FromArgb(248, 250, 252) };
+            keyBox.Location = new Point(12, 5);
+            keyBox.Size = new Size(618, 32);
+            keyBox.Multiline = true;
+            keyBox.BorderStyle = BorderStyle.None;
+            keyBox.BackColor = Color.White;
+            keyBox.ForeColor = Color.FromArgb(15, 23, 42);
+            keyBox.Font = new Font("Consolas", 11F);
+            keyBox.UseSystemPasswordChar = true;
+            keyBox.TabIndex = 0;
+            inputShell.Controls.Add(keyBox);
+            keyCard.Controls.Add(inputShell);
+            reveal.Text = "显示 Key";
+            reveal.Location = new Point(20, 112);
+            reveal.AutoSize = true;
+            reveal.FlatStyle = FlatStyle.Flat;
+            reveal.CheckedChanged += delegate { keyBox.UseSystemPasswordChar = !reveal.Checked; };
+            keyCard.Controls.Add(reveal);
+            var link = new LinkLabel
+            {
+                Text = "打开 DeepSeek Platform",
+                Location = new Point(132, 113),
+                AutoSize = true,
+                LinkColor = Color.FromArgb(37, 99, 235)
+            };
+            link.LinkClicked += delegate
+            {
+                try { Process.Start(new ProcessStartInfo { FileName = "https://platform.deepseek.com/api-docs", UseShellExecute = true }); } catch { }
+            };
+            keyCard.Controls.Add(link);
+            body.Controls.Add(keyCard);
+
+            var statusCard = new HonorCardPanel { Location = new Point(24, 186), Size = new Size(684, 82), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, BackColor = Color.White };
+            statusCard.Controls.Add(new Label
+            {
+                Text = "STATUS",
+                Location = new Point(20, 14),
+                Size = new Size(80, 18),
+                Font = new Font("Segoe UI Semibold", 8F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(148, 163, 184)
+            });
+            status.Text = wasConfigured ? "已保存本机 Key · 输入新 Key 可直接覆盖" : "尚未配置 Key · 请在上方输入";
+            status.Location = new Point(20, 34);
+            status.Size = new Size(630, 28);
+            status.AutoEllipsis = true;
+            status.Font = new Font("Segoe UI Semibold", 10F, FontStyle.Bold);
+            status.ForeColor = wasConfigured ? Color.FromArgb(5, 150, 105) : Color.FromArgb(100, 116, 139);
+            statusCard.Controls.Add(status);
+            body.Controls.Add(statusCard);
+            body.Controls.Add(new Label
+            {
+                Text = "余额接口  ·  GET https://api.deepseek.com/user/balance",
+                Location = new Point(28, 292),
+                Size = new Size(670, 28),
+                ForeColor = Color.FromArgb(100, 116, 139),
+                Font = new Font("Segoe UI", 9F)
+            });
+
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 86, BackColor = Color.White };
+            var clearButton = new HonorActionPanel("清除本机 Key", Color.FromArgb(255, 247, 247), Color.FromArgb(254, 226, 226), Color.FromArgb(185, 28, 28), 136);
+            clearButton.Location = new Point(24, 22);
+            footer.Controls.Add(clearButton);
+            clearButton.Click += delegate
+            {
+                clear();
+                keyBox.Clear();
+                status.Text = "本机 Key 已清除";
+                status.ForeColor = Color.FromArgb(185, 28, 28);
+                DialogResult = DialogResult.OK;
+                Close();
+            };
+            var actions = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 340, Height = 86, FlowDirection = FlowDirection.RightToLeft, WrapContents = false, Padding = new Padding(0, 22, 24, 0), BackColor = Color.White };
+            var cancel = new HonorActionPanel("取消", Color.White, Color.FromArgb(241, 245, 249), Color.FromArgb(51, 65, 85), 88);
+            cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            testSave = new HonorActionPanel("验证并保存 Key", Color.FromArgb(37, 99, 235), Color.FromArgb(29, 78, 216), Color.White, 172);
+            actions.Controls.Add(testSave);
+            actions.Controls.Add(cancel);
+            footer.Controls.Add(actions);
+            testSave.Click += async delegate
+            {
+                var key = keyBox.Text == null ? "" : keyBox.Text.Trim();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    status.Text = "请先输入 DeepSeek API Key";
+                    status.ForeColor = Color.FromArgb(185, 28, 28);
+                    keyBox.Focus();
+                    return;
+                }
+                testSave.Enabled = false;
+                status.Text = "正在验证 Key…";
+                status.ForeColor = Color.FromArgb(37, 99, 235);
+                try
+                {
+                    var result = await configure(key);
+                    status.Text = result.Message;
+                    status.ForeColor = result.Ok ? Color.FromArgb(5, 150, 105) : Color.FromArgb(185, 28, 28);
+                    if (result.Ok)
+                    {
+                        DialogResult = DialogResult.OK;
+                        Close();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    status.Text = "验证失败：" + ex.Message;
+                    status.ForeColor = Color.FromArgb(185, 28, 28);
+                }
+                finally
+                {
+                    testSave.Enabled = true;
+                }
+            };
+
+            Controls.Add(footer);
+            Controls.Add(body);
+            Controls.Add(header);
+        }
+    }
+
+    internal sealed class DeepSeekSettingsFormV2 : Form
+    {
+        private readonly Func<string, Task<DeepSeekKeyResult>> configure;
+        private readonly Action clear;
+        private readonly bool wasConfigured;
+        private readonly TextBox keyBox = new TextBox();
+        private readonly CheckBox reveal = new CheckBox();
+        private readonly Label status = new Label();
+        private Button testSave;
+
+        public DeepSeekSettingsFormV2(Func<string, Task<DeepSeekKeyResult>> configure, Action clear, bool wasConfigured)
+        {
+            this.configure = configure;
+            this.clear = clear;
+            this.wasConfigured = wasConfigured;
+            Text = "Honor Quota  ·  DeepSeek API 配置";
+            StartPosition = FormStartPosition.CenterScreen;
+            Size = new Size(760, 500);
+            MinimumSize = new Size(680, 450);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            BackColor = Color.FromArgb(244, 247, 251);
+            Font = new Font("Segoe UI", 9.5F);
+            BuildUi();
+            Shown += delegate { keyBox.Focus(); };
+        }
+
+        private void BuildUi()
+        {
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 78, Padding = new Padding(24, 14, 24, 14), BackColor = Color.White };
+            var clearButton = FlatButtonV2("清除本机 Key", Color.White, Color.FromArgb(185, 28, 28), 132);
+            clearButton.Dock = DockStyle.Left;
+            clearButton.Click += delegate
+            {
+                clear();
+                keyBox.Clear();
+                status.Text = "本机 Key 已清除。";
+                status.ForeColor = Color.FromArgb(185, 28, 28);
+                DialogResult = DialogResult.OK;
+                Close();
+            };
+            var cancel = FlatButtonV2("取消", Color.White, Color.FromArgb(51, 65, 85), 86);
+            cancel.Dock = DockStyle.Right;
+            cancel.DialogResult = DialogResult.Cancel;
+            testSave = FlatButtonV2("验证并保存 Key", Color.FromArgb(37, 99, 235), Color.White, 144);
+            testSave.Dock = DockStyle.Right;
+            testSave.Click += async delegate
+            {
+                var key = keyBox.Text == null ? "" : keyBox.Text.Trim();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    status.Text = "请在上方输入 DeepSeek API Key。";
+                    status.ForeColor = Color.FromArgb(185, 28, 28);
+                    keyBox.Focus();
+                    return;
+                }
+                testSave.Enabled = false;
+                status.Text = "正在验证 Key…";
+                status.ForeColor = Color.FromArgb(37, 99, 235);
+                try
+                {
+                    var result = await configure(key);
+                    status.Text = result.Message;
+                    status.ForeColor = result.Ok ? Color.FromArgb(5, 150, 105) : Color.FromArgb(185, 28, 28);
+                    if (result.Ok)
+                    {
+                        DialogResult = DialogResult.OK;
+                        Close();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    status.Text = "验证失败：" + ex.Message;
+                    status.ForeColor = Color.FromArgb(185, 28, 28);
+                }
+                finally
+                {
+                    testSave.Enabled = true;
+                }
+            };
+            footer.Controls.Add(clearButton);
+            footer.Controls.Add(cancel);
+            footer.Controls.Add(testSave);
+
+            var body = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(244, 247, 251), Padding = new Padding(24, 20, 24, 12) };
+            body.Controls.Add(new Label
+            {
+                Text = "DeepSeek API Key",
+                Location = new Point(24, 18),
+                Size = new Size(300, 24),
+                Font = new Font("Segoe UI Semibold", 11F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(30, 41, 59)
+            });
+            body.Controls.Add(new Label
+            {
+                Text = "粘贴你的 Key，验证成功后即可读取 DeepSeek 余额。",
+                Location = new Point(24, 42),
+                Size = new Size(620, 22),
+                ForeColor = Color.FromArgb(100, 116, 139)
+            });
+            keyBox.Location = new Point(24, 68);
+            keyBox.Size = new Size(664, 44);
+            keyBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            keyBox.Multiline = true;
+            keyBox.BorderStyle = BorderStyle.FixedSingle;
+            keyBox.BackColor = Color.White;
+            keyBox.ForeColor = Color.FromArgb(15, 23, 42);
+            keyBox.Font = new Font("Consolas", 11F);
+            keyBox.UseSystemPasswordChar = true;
+            body.Controls.Add(keyBox);
+
+            reveal.Text = "显示 Key";
+            reveal.Location = new Point(24, 120);
+            reveal.AutoSize = true;
+            reveal.FlatStyle = FlatStyle.Flat;
+            reveal.CheckedChanged += delegate { keyBox.UseSystemPasswordChar = !reveal.Checked; };
+            body.Controls.Add(reveal);
+
+            var link = new LinkLabel
+            {
+                Text = "打开 DeepSeek Platform 获取或管理 Key",
+                Location = new Point(136, 121),
+                AutoSize = true,
+                LinkColor = Color.FromArgb(37, 99, 235)
+            };
+            link.LinkClicked += delegate
+            {
+                try { Process.Start(new ProcessStartInfo { FileName = "https://platform.deepseek.com/api-docs", UseShellExecute = true }); } catch { }
+            };
+            body.Controls.Add(link);
+
+            var statusPanel = new Panel
+            {
+                Location = new Point(24, 156),
+                Size = new Size(664, 62),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            status.Text = wasConfigured ? "已保存本机 Key · 输入新 Key 可直接覆盖。" : "尚未配置 Key · 请在上方输入。";
+            status.Location = new Point(14, 12);
+            status.Size = new Size(632, 36);
+            status.AutoEllipsis = true;
+            status.ForeColor = wasConfigured ? Color.FromArgb(5, 150, 105) : Color.FromArgb(100, 116, 139);
+            statusPanel.Controls.Add(status);
+            body.Controls.Add(statusPanel);
+
+            body.Controls.Add(new Label
+            {
+                Text = "余额接口：GET https://api.deepseek.com/user/balance\r\n保存位置：当前 Windows 用户环境变量 DEEPSEEK_API_KEY",
+                Location = new Point(24, 236),
+                Size = new Size(664, 48),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+                ForeColor = Color.FromArgb(100, 116, 139)
+            });
+
+            var header = new Panel { Dock = DockStyle.Top, Height = 106, BackColor = Color.White };
+            header.Controls.Add(new Label
+            {
+                Text = "DeepSeek API 配置",
+                Location = new Point(28, 18),
+                Size = new Size(500, 34),
+                Font = new Font("Segoe UI Semibold", 18F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(18, 30, 52)
+            });
+            header.Controls.Add(new Label
+            {
+                Text = "在这里输入、验证并保存 DeepSeek API Key",
+                Location = new Point(30, 58),
+                Size = new Size(560, 24),
+                ForeColor = Color.FromArgb(100, 116, 139)
+            });
+            header.Controls.Add(new Panel { Location = new Point(0, 102), Size = new Size(760, 4), BackColor = Color.FromArgb(37, 99, 235) });
+
+            Controls.Add(footer);
+            Controls.Add(body);
+            Controls.Add(header);
+            AcceptButton = testSave;
+            CancelButton = cancel;
+        }
+
+        private static Button FlatButtonV2(string text, Color back, Color fore, int width)
+        {
+            return new Button { Text = text, Width = width, Height = 40, FlatStyle = FlatStyle.Flat, BackColor = back, ForeColor = fore, Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold), FlatAppearance = { BorderColor = Color.FromArgb(203, 213, 225), BorderSize = 1 } };
         }
     }
 
