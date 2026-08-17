@@ -67,7 +67,7 @@ Copy-Item -LiteralPath (Join-Path $RepoRoot "scripts\start-honor-quota.ps1") -De
 if (-not $NoPackage) {
     $dist = Join-Path $RepoRoot "dist"
     New-Item -ItemType Directory -Force -Path $dist | Out-Null
-    $zip = Join-Path $dist "HonorQuota-0.2.0-win-x64.zip"
+    $zip = Join-Path $dist "HonorQuota-0.0.1-win-x64.zip"
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
     Compress-Archive -Path (Join-Path $OutputDir "*") -DestinationPath $zip -CompressionLevel Optimal
     Write-Host "Package: $zip"

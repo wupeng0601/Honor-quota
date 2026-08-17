@@ -10,7 +10,6 @@ using System.Drawing.Drawing2D;
 using System.IO;
 using System.Globalization;
 using System.Net;
-using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -49,7 +48,6 @@ namespace HonorQuotaApp
         private readonly Timer backgroundTimer;
         private readonly JavaScriptSerializer serializer = new JavaScriptSerializer();
         private readonly OcgWebViewSession ocgSession;
-        private readonly RelayManager relayManager;
         private Process refreshProcess;
         private Task<IDictionary<string, object>> managedRefreshTask;
         private Task<bool> ocgRefreshTask;
@@ -67,8 +65,6 @@ namespace HonorQuotaApp
             historyPath = Path.Combine(appDir, "usage_history.json");
             appIconPath = Path.Combine(appDir, "HonorQuota.ico");
             ocgSession = new OcgWebViewSession(appDir, WriteLog);
-            relayManager = new RelayManager(appDir, WriteLog);
-
             tray = new NotifyIcon();
             tray.Icon = LoadAppIcon(Color.FromArgb(35, 99, 235));
             tray.Text = "Honor Quota";
@@ -136,15 +132,8 @@ namespace HonorQuotaApp
             openOcg.Click += async delegate { await ocgSession.ShowLoginWindowAsync(); };
             var modelSettings = new ToolStripMenuItem("OpenCode Go 模型与用量规则...");
             modelSettings.Click += delegate { OpenModelSettings(); };
-            var relay = new ToolStripMenuItem(RelayMenuText());
-            relay.Click += delegate
-            {
-                if (relayManager.IsRunning()) relayManager.Stop();
-                else if (!relayManager.Start(true)) ShowError(relayManager.LastStatus);
-                relay.Text = RelayMenuText();
-            };
-            var relayHealth = new ToolStripMenuItem("打开欧路 Relay 健康检查");
-            relayHealth.Click += delegate { Process.Start("http://127.0.0.1:8787/health"); };
+            var deepSeekSettings = new ToolStripMenuItem("DeepSeek API 配置...");
+            deepSeekSettings.Click += delegate { OpenDeepSeekSettings(); };
             var shortcut = new ToolStripMenuItem("创建开始菜单快捷方式");
             shortcut.Click += delegate { TryCreateStartMenuShortcut(); OpenStartMenuFolder(); };
             var folder = new ToolStripMenuItem("打开程序目录");
@@ -158,8 +147,7 @@ namespace HonorQuotaApp
             menu.Items.Add(startup);
             menu.Items.Add(openOcg);
             menu.Items.Add(modelSettings);
-            menu.Items.Add(relay);
-            menu.Items.Add(relayHealth);
+            menu.Items.Add(deepSeekSettings);
             menu.Items.Add(shortcut);
             menu.Items.Add(folder);
             menu.Items.Add(new ToolStripSeparator());
@@ -167,14 +155,68 @@ namespace HonorQuotaApp
             menu.Opening += delegate
             {
                 startup.Checked = IsStartupEnabled();
-                relay.Text = RelayMenuText();
             };
             return menu;
         }
 
-        private string RelayMenuText()
+        private void OpenDeepSeekSettings()
         {
-            return relayManager.IsRunning() ? "停止欧路翻译 Relay (8787)" : "启动欧路翻译 Relay (8787)";
+            using (var settings = new DeepSeekSettingsForm(ConfigureDeepSeekApiKeyAsync, ClearDeepSeekApiKey, HasDeepSeekApiKey()))
+            {
+                if (settings.ShowDialog() == DialogResult.OK) StartRefresh(false);
+            }
+        }
+
+        private bool HasDeepSeekApiKey()
+        {
+            return !string.IsNullOrWhiteSpace(UserEnv("DEEPSEEK_API_KEY")) || !string.IsNullOrWhiteSpace(UserEnv("DEEPSEEK_KEY"));
+        }
+
+        private void ClearDeepSeekApiKey()
+        {
+            foreach (var name in new[] { "DEEPSEEK_API_KEY", "DEEPSEEK_KEY" })
+            {
+                try { Environment.SetEnvironmentVariable(name, null, EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable(name, null, EnvironmentVariableTarget.Process); } catch { }
+            }
+        }
+
+        private async Task<DeepSeekKeyResult> ConfigureDeepSeekApiKeyAsync(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key)) return DeepSeekKeyResult.Fail("请输入 DeepSeek API Key。");
+            var result = await Task.Run(delegate
+            {
+                try
+                {
+                    var headers = new Dictionary<string, string>
+                    {
+                        { "Authorization", "Bearer " + key.Trim() },
+                        { "Accept", "application/json" },
+                        { "User-Agent", "HonorQuota" }
+                    };
+                    var data = HttpJsonObject("https://api.deepseek.com/user/balance", headers, 15000);
+                    var balance = Json.Value(data, "balance_infos") as IEnumerable;
+                    if (balance == null) return DeepSeekKeyResult.Fail("官方接口返回中没有 balance_infos。");
+                    return DeepSeekKeyResult.Success("官方余额接口测试成功。正在保存到当前 Windows 用户配置。", key.Trim());
+                }
+                catch (Exception ex)
+                {
+                    return DeepSeekKeyResult.Fail("官方余额接口测试失败：" + ex.Message);
+                }
+            });
+            if (!result.Ok) return result;
+            try
+            {
+                Environment.SetEnvironmentVariable("DEEPSEEK_API_KEY", result.Key, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("DEEPSEEK_API_KEY", result.Key, EnvironmentVariableTarget.Process);
+                try { Environment.SetEnvironmentVariable("DEEPSEEK_KEY", null, EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("DEEPSEEK_KEY", null, EnvironmentVariableTarget.Process); } catch { }
+                return DeepSeekKeyResult.Success(result.Message, result.Key);
+            }
+            catch (Exception ex)
+            {
+                return DeepSeekKeyResult.Fail("接口测试成功，但保存到 Windows 用户环境失败：" + ex.Message);
+            }
         }
 
         private void OpenModelSettings()
@@ -821,7 +863,6 @@ namespace HonorQuotaApp
                 pollTimer.Stop();
                 backgroundTimer.Stop();
           if (refreshProcess != null && !refreshProcess.HasExited) refreshProcess.Kill();
-          if (relayManager != null) relayManager.StopIfStartedByThisApp();
           if (ocgSession != null) ocgSession.Dispose();
                 if (popup != null && !popup.IsDisposed) popup.Close();
                 tray.Visible = false;
@@ -830,124 +871,6 @@ namespace HonorQuotaApp
             }
             catch { }
             Application.Exit();
-        }
-    }
-
-    internal sealed class RelayManager
-    {
-        private readonly string relayDir;
-        private readonly string startScript;
-        private readonly string stopScript;
-        private readonly Action<string> log;
-        private Process process;
-        private bool startedByThisApp;
-        public string LastStatus { get; private set; }
-
-        public RelayManager(string appDir, Action<string> log)
-        {
-            relayDir = Path.Combine(appDir, "opencode-go-relay");
-            startScript = Path.Combine(relayDir, "start-relay.ps1");
-            stopScript = Path.Combine(relayDir, "stop-relay.ps1");
-            this.log = log;
-            LastStatus = "Relay not checked.";
-        }
-
-        public bool IsRunning()
-        {
-            try
-            {
-                using (var client = new TcpClient())
-                {
-                    var task = client.ConnectAsync(IPAddress.Loopback, 8787);
-                    return task.Wait(250) && client.Connected;
-                }
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public bool Start(bool manual)
-        {
-            if (IsRunning())
-            {
-                LastStatus = "Relay is already listening on 127.0.0.1:8787.";
-                return true;
-            }
-            if (!File.Exists(startScript))
-            {
-                LastStatus = "缺少 relay 启动脚本：" + startScript;
-                log(LastStatus);
-                return false;
-            }
-            try
-            {
-                process = Process.Start(new ProcessStartInfo
-                {
-                    FileName = "powershell.exe",
-                    Arguments = "-NoProfile -ExecutionPolicy Bypass -File " + Quote(startScript) + " -PromptForKey 0",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    WorkingDirectory = relayDir
-                });
-                startedByThisApp = true;
-                LastStatus = "Relay start requested on 127.0.0.1:8787.";
-                log(LastStatus);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LastStatus = "启动 relay 失败：" + ex.Message;
-                log(LastStatus);
-                return false;
-            }
-        }
-
-        public void Stop()
-        {
-            if (!File.Exists(stopScript))
-            {
-                LastStatus = "缺少 relay 停止脚本：" + stopScript;
-                log(LastStatus);
-                return;
-            }
-            try
-            {
-                using (var stopper = Process.Start(new ProcessStartInfo
-                {
-                    FileName = "powershell.exe",
-                    Arguments = "-NoProfile -ExecutionPolicy Bypass -File " + Quote(stopScript),
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    WorkingDirectory = relayDir
-                }))
-                {
-                    if (stopper != null) stopper.WaitForExit(4000);
-                }
-                startedByThisApp = false;
-                LastStatus = "Relay stop requested.";
-                log(LastStatus);
-            }
-            catch (Exception ex)
-            {
-                LastStatus = "停止 relay 失败：" + ex.Message;
-                log(LastStatus);
-            }
-        }
-
-        public void StopIfStartedByThisApp()
-        {
-            if (!startedByThisApp) return;
-            try { Stop(); } catch { }
-            try { if (process != null && !process.HasExited) process.Kill(); } catch { }
-        }
-
-        private static string Quote(string value)
-        {
-            return "\"" + value.Replace("\"", "\\\"") + "\"";
         }
     }
 
@@ -2182,6 +2105,173 @@ linear-gradient(180deg,#fbfdff 0%,#f6f8fb 64%,#eef2f7 100%)} main{padding:14px}
             var value = (id ?? "").Replace('-', ' ').Replace('.', ' ');
             if (value.Length == 0) return "未命名模型";
             return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(value);
+        }
+    }
+
+    internal sealed class DeepSeekKeyResult
+    {
+        public bool Ok;
+        public string Message;
+        public string Key;
+
+        public static DeepSeekKeyResult Success(string message, string key)
+        {
+            return new DeepSeekKeyResult { Ok = true, Message = message, Key = key };
+        }
+
+        public static DeepSeekKeyResult Fail(string message)
+        {
+            return new DeepSeekKeyResult { Ok = false, Message = message, Key = "" };
+        }
+    }
+
+    internal sealed class DeepSeekSettingsForm : Form
+    {
+        private readonly Func<string, Task<DeepSeekKeyResult>> configure;
+        private readonly Action clear;
+        private readonly bool wasConfigured;
+        private readonly TextBox keyBox = new TextBox();
+        private readonly CheckBox reveal = new CheckBox();
+        private readonly Label status = new Label();
+        private Button testSave;
+
+        public DeepSeekSettingsForm(Func<string, Task<DeepSeekKeyResult>> configure, Action clear, bool wasConfigured)
+        {
+            this.configure = configure;
+            this.clear = clear;
+            this.wasConfigured = wasConfigured;
+            Text = "Honor Quota  ·  DeepSeek API 配置";
+            StartPosition = FormStartPosition.CenterScreen;
+            Size = new Size(650, 430);
+            MinimumSize = new Size(560, 380);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            BackColor = Color.FromArgb(244, 247, 251);
+            Font = new Font("Segoe UI", 9.5F);
+            BuildUi();
+        }
+
+        private void BuildUi()
+        {
+            var header = new Panel { Dock = DockStyle.Top, Height = 92, Padding = new Padding(28, 18, 28, 8), BackColor = Color.White };
+            header.Controls.Add(new Label
+            {
+                Text = "DeepSeek API 配置",
+                Dock = DockStyle.Top,
+                Height = 32,
+                Font = new Font("Segoe UI Semibold", 16F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(18, 30, 52)
+            });
+            header.Controls.Add(new Label
+            {
+                Text = "DeepSeek 不提供 Codex 那样的本地登录额度接口，需要你明确配置官方 API Key。",
+                Dock = DockStyle.Fill,
+                ForeColor = Color.FromArgb(100, 116, 139),
+                AutoEllipsis = true
+            });
+            Controls.Add(header);
+
+            var body = new Panel { Dock = DockStyle.Fill, Padding = new Padding(28, 22, 28, 12), BackColor = Color.FromArgb(244, 247, 251) };
+            body.Controls.Add(new Label { Text = "API Key", Location = new Point(28, 22), AutoSize = true, Font = new Font("Segoe UI Semibold", 10F, FontStyle.Bold), ForeColor = Color.FromArgb(30, 41, 59) });
+            keyBox.Location = new Point(28, 50);
+            keyBox.Size = new Size(570, 34);
+            keyBox.Font = new Font("Consolas", 10F);
+            keyBox.UseSystemPasswordChar = true;
+            body.Controls.Add(keyBox);
+
+            reveal.Text = "显示 Key";
+            reveal.Location = new Point(28, 91);
+            reveal.AutoSize = true;
+            reveal.FlatStyle = FlatStyle.Flat;
+            reveal.CheckedChanged += delegate { keyBox.UseSystemPasswordChar = !reveal.Checked; };
+            body.Controls.Add(reveal);
+
+            var link = new LinkLabel { Text = "打开 DeepSeek Platform 获取或管理 API Key", Location = new Point(28, 127), AutoSize = true, LinkColor = Color.FromArgb(37, 99, 235) };
+            link.LinkClicked += delegate
+            {
+                try { Process.Start(new ProcessStartInfo { FileName = "https://platform.deepseek.com/api-docs", UseShellExecute = true }); } catch { }
+            };
+            body.Controls.Add(link);
+
+            var endpoint = new Label
+            {
+                Text = "测试接口：GET https://api.deepseek.com/user/balance\r\nKey 只保存到当前 Windows 用户环境变量 DEEPSEEK_API_KEY，不写入仓库或应用日志。",
+                Location = new Point(28, 164),
+                Size = new Size(570, 50),
+                ForeColor = Color.FromArgb(100, 116, 139),
+                AutoEllipsis = true
+            };
+            body.Controls.Add(endpoint);
+
+            status.Text = wasConfigured ? "当前状态：已检测到本机 DeepSeek Key（不会显示原文）。" : "当前状态：尚未配置 DeepSeek Key。";
+            status.Location = new Point(28, 232);
+            status.Size = new Size(570, 42);
+            status.ForeColor = wasConfigured ? Color.FromArgb(5, 150, 105) : Color.FromArgb(100, 116, 139);
+            status.AutoEllipsis = true;
+            body.Controls.Add(status);
+            Controls.Add(body);
+
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 70, Padding = new Padding(28, 12, 28, 12), BackColor = Color.White };
+            var clearButton = FlatButton("清除本机 Key", Color.White, Color.FromArgb(185, 28, 28), 112);
+            clearButton.Dock = DockStyle.Left;
+            clearButton.Click += delegate
+            {
+                clear();
+                keyBox.Clear();
+                status.Text = "已清除本机 DeepSeek Key。下次刷新将不再请求余额接口。";
+                status.ForeColor = Color.FromArgb(185, 28, 28);
+                DialogResult = DialogResult.OK;
+                Close();
+            };
+            var cancel = FlatButton("取消", Color.White, Color.FromArgb(51, 65, 85), 82);
+            cancel.Dock = DockStyle.Right;
+            cancel.DialogResult = DialogResult.Cancel;
+            testSave = FlatButton("测试并保存", Color.FromArgb(37, 99, 235), Color.White, 118);
+            testSave.Dock = DockStyle.Right;
+            testSave.Click += async delegate
+            {
+                var key = keyBox.Text == null ? "" : keyBox.Text.Trim();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    status.Text = "请先输入 DeepSeek API Key。";
+                    status.ForeColor = Color.FromArgb(185, 28, 28);
+                    return;
+                }
+                testSave.Enabled = false;
+                status.Text = "正在请求 DeepSeek 官方余额接口…";
+                status.ForeColor = Color.FromArgb(37, 99, 235);
+                try
+                {
+                    var result = await configure(key);
+                    status.Text = result.Message;
+                    status.ForeColor = result.Ok ? Color.FromArgb(5, 150, 105) : Color.FromArgb(185, 28, 28);
+                    if (result.Ok)
+                    {
+                        DialogResult = DialogResult.OK;
+                        Close();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    status.Text = "配置失败：" + ex.Message;
+                    status.ForeColor = Color.FromArgb(185, 28, 28);
+                }
+                finally
+                {
+                    testSave.Enabled = true;
+                }
+            };
+            footer.Controls.Add(clearButton);
+            footer.Controls.Add(cancel);
+            footer.Controls.Add(testSave);
+            Controls.Add(footer);
+            AcceptButton = testSave;
+            CancelButton = cancel;
+        }
+
+        private static Button FlatButton(string text, Color back, Color fore, int width)
+        {
+            return new Button { Text = text, Width = width, Height = 38, FlatStyle = FlatStyle.Flat, BackColor = back, ForeColor = fore, Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold), FlatAppearance = { BorderColor = Color.FromArgb(203, 213, 225), BorderSize = 1 } };
         }
     }
 
